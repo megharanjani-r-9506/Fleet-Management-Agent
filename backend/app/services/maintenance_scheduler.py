@@ -1,20 +1,32 @@
 from app.database.db import get_connection
-from app.services.booking_service import create_booking
-from app.services.delivery_service import has_scheduled_delivery
-from app.services.fleet_service import find_replacement_vehicle
-from app.services.reassignment_service import reassign_delivery
+
+
+def has_pending_maintenance(vehicle_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 1 FROM maintenance_schedule
+        WHERE vehicle_id = ? AND status = 'Pending'
+    """, (vehicle_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    return result is not None
+
+
 def schedule_maintenance(vehicle_id, risk_level):
 
-    if risk_level == "Healthy":
+    if risk_level in ["Healthy", "Monitor"]:
         return None
 
-    if risk_level == "Monitor":
-        return None
+    if has_pending_maintenance(vehicle_id):
+        return {"message": "Already scheduled"}
 
     if risk_level == "Critical":
         recommendation = "Schedule maintenance within 24 hours"
         priority = "High"
-
     else:
         recommendation = "Schedule maintenance within 3 days"
         priority = "Medium"
@@ -23,64 +35,25 @@ def schedule_maintenance(vehicle_id, risk_level):
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT INTO maintenance_schedule (
-        vehicle_id,
-        risk_level,
-        recommendation,
-        priority,
-        status
-    )
-    VALUES (?, ?, ?, ?, ?)
+        INSERT INTO maintenance_schedule (
+            vehicle_id,
+            risk_level,
+            recommendation,
+            priority,
+            status
+        )
+        VALUES (?, ?, ?, ?, 'Pending')
     """, (
         vehicle_id,
         risk_level,
         recommendation,
-        priority,
-        "Pending"
+        priority
     ))
 
     conn.commit()
     conn.close()
 
-    if has_scheduled_delivery(vehicle_id):
-
-        print(
-            f"WARNING: {vehicle_id} has a scheduled delivery."
-        )
-
-        replacement = find_replacement_vehicle(vehicle_id)
-
-        if replacement:
-
-                print(
-                    f"Replacement Vehicle Found: {replacement}"
-                )
-
-                moved = reassign_delivery(
-                    vehicle_id,
-                    replacement
-                )
-
-                print(
-                    f"Deliveries Reassigned: {moved}"
-                )
-
-                booking = create_booking(vehicle_id)
-
-        else:
-
-            print(
-                    "No replacement vehicle available."
-            )
-
-            booking = None
-
-    else:
-
-        booking = create_booking(vehicle_id)
-
     return {
-        "recommendation": recommendation,
-        "priority": priority,
-        "booking": booking
+        "vehicle_id": vehicle_id,
+        "status": "Pending"
     }

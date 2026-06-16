@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+from app.api.routes import router
 
-@app.get("/")
-def home():
-    return {"message": "Fleet Maintenance System Running"}
+app = FastAPI(
+    title="Fleet Maintenance API"
+)
+
+app.include_router(router)

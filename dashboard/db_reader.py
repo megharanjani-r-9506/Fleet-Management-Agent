@@ -39,3 +39,54 @@ def get_maintenance():
     conn.close()
 
     return df
+
+def get_bookings():
+
+    conn = sqlite3.connect(DB_PATH)
+
+    query = """
+    SELECT *
+    FROM service_bookings
+    ORDER BY id DESC
+    LIMIT 20
+    """
+
+    df = pd.read_sql_query(query, conn)
+
+    conn.close()
+
+    return df
+
+
+def get_deliveries():
+
+    conn = sqlite3.connect(DB_PATH)
+
+    query = """
+    SELECT *
+    FROM delivery_schedule
+    ORDER BY id DESC
+    LIMIT 20
+    """
+
+    df = pd.read_sql_query(query, conn)
+
+    conn.close()
+
+    return df
+
+
+def get_service_slots():
+
+    conn = sqlite3.connect(DB_PATH)
+
+    query = """
+    SELECT *
+    FROM service_slots
+    """
+
+    df = pd.read_sql_query(query, conn)
+
+    conn.close()
+
+    return df

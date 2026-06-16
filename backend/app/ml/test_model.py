@@ -1,36 +1,31 @@
-import joblib
-import pandas as pd
+from app.ml.predictor import predict_vehicle_health
 
-model = joblib.load(
-    "app/models/failure_model.pkl"
-)
-
-sample = pd.DataFrame([
+tests = [
     {
-        "Air temperature [K]": 310,
-        "Process temperature [K]": 320,
-        "Rotational speed [rpm]": 3000,
-        "Torque [Nm]": 80,
-        "Tool wear [min]": 250
+        "ambient_temp": 25,
+        "engine_temp": 60,
+        "engine_rpm": 1000,
+        "engine_load": 10,
+        "operating_hours": 100,
+        "mileage": 1000
+    },
+    {
+        "ambient_temp": 25,
+        "engine_temp": 70,
+        "engine_rpm": 1200,
+        "engine_load": 20,
+        "operating_hours": 500,
+        "mileage": 10000
+    },
+    {
+        "ambient_temp": 35,
+        "engine_temp": 110,
+        "engine_rpm": 2500,
+        "engine_load": 80,
+        "operating_hours": 5000,
+        "mileage": 120000
     }
-])
+]
 
-probability = model.predict_proba(sample)
-
-failure_probability = probability[0][1] * 100
-health_score = 100 - failure_probability
-
-if health_score > 80:
-    risk_level = "Healthy"
-
-elif health_score > 50:
-    risk_level = "Monitor"
-
-elif health_score > 20:
-    risk_level = "Maintenance Required"
-
-else:
-    risk_level = "Critical"
-print("Failure Probability:", round(failure_probability, 2), "%")
-print("Health Score:", round(health_score, 2))
-print("Risk Level:", risk_level)
+for t in tests:
+    print(predict_vehicle_health(**t))

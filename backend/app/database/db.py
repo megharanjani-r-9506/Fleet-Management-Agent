@@ -1,9 +1,8 @@
-import sqlite3
 from pathlib import Path
+import sqlite3
 
-
-DATABASE_PATH = Path(__file__).resolve().parents[2] / "fleet.db"
-
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DB_PATH = BASE_DIR / "fleet.db"
 
 def get_connection():
-    return sqlite3.connect(DATABASE_PATH)
+    return sqlite3.connect(DB_PATH)

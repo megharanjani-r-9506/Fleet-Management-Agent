@@ -31,13 +31,13 @@ def predict_vehicle_health(
 
     health_score = 100 - failure_probability
 
-    if health_score > 80:
+    if health_score > 40:
         risk_level = "Healthy"
 
-    elif health_score > 50:
+    elif health_score > 25:
         risk_level = "Monitor"
 
-    elif health_score > 20:
+    elif health_score > 10:
         risk_level = "Maintenance Required"
 
     else:
