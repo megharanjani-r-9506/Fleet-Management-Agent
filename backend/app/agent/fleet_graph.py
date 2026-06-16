@@ -2,8 +2,21 @@ from langgraph.graph import StateGraph, END
 from app.database.db import get_connection
 from app.services.booking_service import create_booking
 from app.services.smart_scheduler import select_best_slot
+
+
 # -----------------------------
-# NODE 1: GET PENDING MAINTENANCE
+# STATE STRUCTURE
+# -----------------------------
+def init_state():
+    return {
+        "pending": [],
+        "current_vehicle": None,
+        "selected_slot": None
+    }
+
+
+# -----------------------------
+# NODE 1: FETCH PENDING
 # -----------------------------
 def fetch_pending(state):
 
@@ -11,95 +24,95 @@ def fetch_pending(state):
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT id, vehicle_id
+        SELECT id, vehicle_id, risk_level
         FROM maintenance_schedule
         WHERE status = 'Pending'
         ORDER BY id ASC
     """)
 
-    rows = cursor.fetchall()
-
-    print("[DEBUG] Pending rows:", rows)   # 🔥 ADD THIS
-
-    state["pending"] = rows
+    state["pending"] = cursor.fetchall()
     conn.close()
 
+    print(f"[GRAPH] Pending: {len(state['pending'])}")
     return state
+
+
 # -----------------------------
-# NODE 2: PROCESS BOOKINGS
+# NODE 2: PROCESS ONE VEHICLE
 # -----------------------------
-def process_bookings(state):
+def process_vehicle(state):
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    for maintenance_id, vehicle_id in state.get("pending", []):
+    for maintenance_id, vehicle_id, risk_level in state["pending"]:
 
         print(f"[GRAPH] Processing {vehicle_id}")
 
-        # -----------------------------
-        # USE SMART SCHEDULER (NEW)
-        # -----------------------------
+        # -------------------------
+        # CHECK SLOT
+        # -------------------------
         slot = select_best_slot(vehicle_id)
 
         if not slot:
-            print(f"[GRAPH] No slot available for {vehicle_id}")
+            print(f"[GRAPH] No slot for {vehicle_id}")
             continue
 
         slot_id, service_date, service_time = slot
 
-        # -----------------------------
-        # CREATE BOOKING (MANUAL INSERT NOW)
-        # -----------------------------
-        cursor.execute("""
-            INSERT INTO service_bookings (
-                vehicle_id,
-                service_date,
-                service_time,
-                status
-            )
-            VALUES (?, ?, ?, 'Booked')
-        """, (
-            vehicle_id,
-            service_date,
-            service_time
-        ))
+        # -------------------------
+        # CREATE BOOKING
+        # -------------------------
+        booking = create_booking(vehicle_id)
 
-        # -----------------------------
-        # MARK SLOT AS USED
-        # -----------------------------
-        cursor.execute("""
-            UPDATE service_slots
-            SET available = 0
-            WHERE id = ?
-        """, (slot_id,))
+        if booking:
 
-        # -----------------------------
-        # UPDATE MAINTENANCE STATUS
-        # -----------------------------
-        cursor.execute("""
-            UPDATE maintenance_schedule
-            SET status = 'Booked'
-            WHERE id = ?
-        """, (maintenance_id,))
+            cursor.execute("""
+                UPDATE maintenance_schedule
+                SET status = 'Booked'
+                WHERE id = ?
+            """, (maintenance_id,))
 
-        conn.commit()
+            conn.commit()
 
-        print(f"[GRAPH] Booked {vehicle_id} -> {service_date} {service_time}")
+            print(f"[GRAPH] Booked {vehicle_id} -> {service_date} {service_time}")
 
     conn.close()
     return state
+
+def rank_vehicles(state):
+
+    priority_map = {
+        "Critical": 1,
+        "Maintenance Required": 2,
+        "Monitor": 3,
+        "Healthy": 4
+    }
+
+    state["pending"].sort(
+        key=lambda x: priority_map.get(x[2], 99)
+    )
+
+    print("\n[GRAPH] Ranked Order:")
+    for _, vehicle_id, risk_level in state["pending"]:
+        print(f"{vehicle_id} -> {risk_level}")
+
+    return state
+
 # -----------------------------
 # BUILD GRAPH
 # -----------------------------
 graph = StateGraph(dict)
 
 graph.add_node("fetch_pending", fetch_pending)
-graph.add_node("process_bookings", process_bookings)
+graph.add_node("rank_vehicles", rank_vehicles)
+graph.add_node("process_vehicle", process_vehicle)
 
 graph.set_entry_point("fetch_pending")
-graph.add_edge("fetch_pending", "process_bookings")
-graph.add_edge("process_bookings", END)
+
+graph.add_edge("fetch_pending", "rank_vehicles")
+graph.add_edge("rank_vehicles", "process_vehicle")
+graph.add_edge("process_vehicle", END)
 
 app = graph.compile()
 
@@ -111,7 +124,8 @@ def run_fleet_graph():
 
     print("[GRAPH] Starting fleet orchestration...")
 
-    result = app.invoke({})
+    state = init_state()
+    app.invoke(state)
 
     print("[GRAPH] Completed cycle")
 
