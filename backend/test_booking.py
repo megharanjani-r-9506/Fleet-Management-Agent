@@ -1,4 +1,15 @@
-from app.services.booking_service import create_booking
+from app.database.db import get_connection
 
-result = create_booking("TRK001")
-print(result)
+c = get_connection()
+cur = c.cursor()
+
+cur.execute("""
+INSERT INTO maintenance_schedule 
+(vehicle_id, risk_level, recommendation, priority, status)
+VALUES ('TEST_SLOT','Critical','Test booking','High','Pending')
+""")
+
+c.commit()
+c.close()
+
+print("Inserted")

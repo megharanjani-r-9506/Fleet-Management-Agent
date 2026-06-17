@@ -4,6 +4,19 @@ from app.database.db import get_connection
 from app.services.booking_service import create_booking
 from app.services.smart_scheduler import select_best_slot
 
+from app.services.decision_service import (
+    log_decision,
+    create_notification
+)
+
+from app.services.fleet_service import find_replacement_vehicle
+from app.services.delivery_service import (
+    has_upcoming_delivery,
+    reassign_delivery
+)
+
+from app.services.conflict_engine import check_universal_conflict
+
 
 # -----------------------------
 # STATE STRUCTURE
@@ -11,7 +24,8 @@ from app.services.smart_scheduler import select_best_slot
 def init_state():
     return {
         "pending": [],
-        "allocations": []
+        "allocations": [],
+        "decisions": []
     }
 
 
@@ -31,7 +45,6 @@ def fetch_pending(state):
     """)
 
     state["pending"] = cursor.fetchall()
-
     conn.close()
 
     print(f"[GRAPH] Pending: {len(state['pending'])}")
@@ -56,7 +69,6 @@ def rank_vehicles(state):
     )
 
     print("\n[GRAPH] Ranked Order:")
-
     for _, vehicle_id, risk_level in state["pending"]:
         print(f"{vehicle_id} -> {risk_level}")
 
@@ -64,42 +76,137 @@ def rank_vehicles(state):
 
 
 # -----------------------------
-# NODE 3: ALLOCATE SLOTS
+# NODE 3: DECISION BRAIN (UNIFIED ENGINE)
+# -----------------------------
+def decision_brain(state):
+
+    print("\n[GRAPH] Running Decision Brain...")
+
+    decisions = []
+
+    for maintenance_id, vehicle_id, risk_level in state["pending"]:
+
+        priority_map = {
+            "Critical": 1,
+            "Maintenance Required": 2,
+            "Monitor": 3,
+            "Healthy": 4
+        }
+
+        priority_score = priority_map.get(risk_level, 99)
+
+        conflict = check_universal_conflict(vehicle_id, risk_level)
+        delivery = has_upcoming_delivery(vehicle_id)
+
+        decision = None
+        reason = None
+
+        # --------------------------------
+        # CRITICAL CASE WITH CONFLICT
+        # --------------------------------
+        if risk_level == "Critical" and (conflict["has_conflict"] or delivery):
+
+            if delivery:
+
+                delivery_id, delivery_date, route = delivery
+
+                replacement = find_replacement_vehicle(vehicle_id, delivery_date)
+
+                if replacement:
+
+                    reassign_delivery(vehicle_id, replacement)
+
+                    decision = "Delivery Reassigned"
+                    reason = f"Moved to {replacement} due to conflict"
+
+                    create_notification(
+                        "Delivery Reassigned",
+                        f"{vehicle_id} reassigned to {replacement}"
+                    )
+
+                else:
+
+                    decision = "Hold Delivery"
+                    reason = "No replacement vehicle available"
+
+                    create_notification(
+                        "Delivery Held",
+                        f"{vehicle_id} has no replacement available"
+                    )
+
+            else:
+
+                decision = "Maintenance Delayed"
+                reason = "Conflict detected but no delivery impact"
+
+        # --------------------------------
+        # MAINTENANCE REQUIRED CASE
+        # --------------------------------
+        elif risk_level == "Maintenance Required":
+
+            if delivery:
+
+                decision = "Schedule After Delivery"
+                reason = "Maintenance deferred due to delivery"
+
+            else:
+
+                decision = "Schedule Maintenance"
+                reason = "Safe to proceed"
+
+        # --------------------------------
+        # DEFAULT CASE
+        # --------------------------------
+        else:
+
+            decision = "No Action Required"
+            reason = "Vehicle is stable or low priority"
+
+        # --------------------------------
+        # LOG DECISION
+        # --------------------------------
+        log_decision(vehicle_id, risk_level, decision, reason)
+
+        print(f"[GRAPH] Decision -> {vehicle_id} | {decision}")
+
+        decisions.append({
+            "vehicle_id": vehicle_id,
+            "risk_level": risk_level,
+            "priority_score": priority_score,
+            "decision": decision,
+            "reason": reason
+        })
+
+    state["decisions"] = decisions
+    return state
+
+
+# -----------------------------
+# NODE 4: SLOT ALLOCATION
 # -----------------------------
 def allocate_slots(state):
-
-    conn = get_connection()
-    cursor = conn.cursor()
 
     allocations = []
 
     print("\n[GRAPH] Allocating Slots...")
 
-    # Get all available slots once
-    cursor.execute("""
-        SELECT id, service_date, service_time
-        FROM service_slots
-        WHERE available = 1
-        ORDER BY service_date ASC, id ASC
-    """)
-
-    available_slots = cursor.fetchall()
-
-    slot_index = 0
-
     for maintenance_id, vehicle_id, risk_level in state["pending"]:
 
-        # No more slots
-        if slot_index >= len(available_slots):
+        conflict = check_universal_conflict(vehicle_id, risk_level)
+
+        if conflict["has_conflict"]:
 
             print(
-                f"[GRAPH] No slot available for {vehicle_id}"
+                f"[GRAPH] Conflict -> "
+                f"{vehicle_id} | {conflict['type']} | {conflict['details']}"
             )
-
             continue
 
-        slot = available_slots[slot_index]
-        slot_index += 1
+        slot = select_best_slot(vehicle_id)
+
+        if not slot:
+            print(f"[GRAPH] No slot available for {vehicle_id}")
+            continue
 
         slot_id, service_date, service_time = slot
 
@@ -112,18 +219,15 @@ def allocate_slots(state):
 
         print(
             f"[GRAPH] Slot Selected -> "
-            f"{vehicle_id}: "
-            f"{service_date} {service_time}"
+            f"{vehicle_id}: {service_date} {service_time}"
         )
 
-    conn.close()
-
     state["allocations"] = allocations
-
     return state
 
+
 # -----------------------------
-# NODE 4: PROCESS BOOKINGS
+# NODE 5: PROCESS BOOKINGS
 # -----------------------------
 def process_vehicle(state):
 
@@ -134,14 +238,11 @@ def process_vehicle(state):
 
         maintenance_id = item["maintenance_id"]
         vehicle_id = item["vehicle_id"]
-
         slot_id, service_date, service_time = item["slot"]
 
         print(f"\n[GRAPH] Processing {vehicle_id}")
 
-        slot_id, service_date, service_time = item["slot"]
-
-        booking = create_booking(vehicle_id,slot_id,service_date,service_time)
+        booking = create_booking(vehicle_id, slot_id, service_date, service_time)
 
         if booking:
 
@@ -154,13 +255,11 @@ def process_vehicle(state):
             conn.commit()
 
             print(
-                f"[GRAPH] Booked "
-                f"{vehicle_id} -> "
+                f"[GRAPH] Booked {vehicle_id} -> "
                 f"{service_date} {service_time}"
             )
 
     conn.close()
-
     return state
 
 
@@ -171,13 +270,15 @@ graph = StateGraph(dict)
 
 graph.add_node("fetch_pending", fetch_pending)
 graph.add_node("rank_vehicles", rank_vehicles)
+graph.add_node("decision_brain", decision_brain)
 graph.add_node("allocate_slots", allocate_slots)
 graph.add_node("process_vehicle", process_vehicle)
 
 graph.set_entry_point("fetch_pending")
 
 graph.add_edge("fetch_pending", "rank_vehicles")
-graph.add_edge("rank_vehicles", "allocate_slots")
+graph.add_edge("rank_vehicles", "decision_brain")
+graph.add_edge("decision_brain", "allocate_slots")
 graph.add_edge("allocate_slots", "process_vehicle")
 graph.add_edge("process_vehicle", END)
 

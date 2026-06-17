@@ -7,7 +7,9 @@ from api_client import (
     get_maintenance,
     get_predictions,
     get_service_slots,
-    get_vehicles,   # IMPORTANT FIX
+    get_vehicles,
+    get_decisions,
+    get_notifications   # ✅ IMPORTANT
 )
 
 # -----------------------------
@@ -29,6 +31,8 @@ maintenance_df = get_maintenance()
 bookings_df = get_bookings()
 deliveries_df = get_deliveries()
 slots_df = get_service_slots()
+decisions_df = get_decisions()
+notifications_df = get_notifications()   # ✅ FIXED (was missing usage)
 
 # -----------------------------
 # SAFETY CHECK
@@ -48,9 +52,9 @@ latest_predictions = (
 )
 
 # -----------------------------
-# KPI CALCULATIONS (FIXED ROOT ISSUE HERE)
+# KPI CALCULATIONS
 # -----------------------------
-total_vehicles = len(vehicles_df)   # ✅ FIXED (REAL SOURCE)
+total_vehicles = len(vehicles_df)
 
 healthy_count = (latest_predictions["risk_level"] == "Healthy").sum()
 monitor_count = (latest_predictions["risk_level"] == "Monitor").sum()
@@ -184,6 +188,56 @@ if deliveries_df is not None and not deliveries_df.empty and "vehicle_id" in del
 
 else:
     st.info("No delivery data available")
+
+# -----------------------------
+# 🧠 AGENT DECISIONS
+# -----------------------------
+st.subheader("🧠 AI Agent Decisions")
+
+if decisions_df is not None and not decisions_df.empty:
+
+    st.dataframe(
+        decisions_df.sort_values("created_at", ascending=False),
+        use_container_width=True
+    )
+
+    st.subheader("Decision Distribution")
+
+    decision_chart = px.histogram(
+        decisions_df,
+        x="decision",
+        title="Agent Decision Types"
+    )
+
+    st.plotly_chart(decision_chart, use_container_width=True)
+
+else:
+    st.info("No agent decisions available")
+
+# -----------------------------
+# 🔔 NOTIFICATIONS (NEW + FIXED)
+# -----------------------------
+st.subheader("🔔 System Notifications")
+
+if notifications_df is not None and not notifications_df.empty:
+
+    st.dataframe(
+        notifications_df.sort_values("created_at", ascending=False),
+        use_container_width=True
+    )
+
+    st.subheader("Notification Types")
+
+    notif_chart = px.histogram(
+        notifications_df,
+        x="title",
+        title="Notification Summary"
+    )
+
+    st.plotly_chart(notif_chart, use_container_width=True)
+
+else:
+    st.info("No notifications available")
 
 # -----------------------------
 # TABLES

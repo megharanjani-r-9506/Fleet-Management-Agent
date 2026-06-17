@@ -1,28 +1,41 @@
 from app.database.db import get_connection
 
 
-def find_replacement_vehicle(vehicle_id):
+def find_replacement_vehicle(
+    excluded_vehicle,
+    delivery_date
+):
 
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Vehicles already scheduled that day
     cursor.execute("""
-    SELECT v.vehicle_id
-    FROM vehicles v
-    WHERE v.vehicle_id != ?
-    AND v.vehicle_id NOT IN (
         SELECT vehicle_id
         FROM delivery_schedule
-        WHERE status = 'Scheduled'
-    )
-    LIMIT 1
-    """, (vehicle_id,))
+        WHERE delivery_date = ?
+        AND status = 'Scheduled'
+    """, (delivery_date,))
 
-    vehicle = cursor.fetchone()
+    assigned = {
+        row[0]
+        for row in cursor.fetchall()
+    }
+
+    # Find free vehicle
+    cursor.execute("""
+        SELECT vehicle_id
+        FROM vehicles
+        WHERE vehicle_id != ?
+    """, (excluded_vehicle,))
+
+    candidates = cursor.fetchall()
 
     conn.close()
 
-    if vehicle:
-        return vehicle[0]
+    for (vehicle_id,) in candidates:
+
+        if vehicle_id not in assigned:
+            return vehicle_id
 
     return None

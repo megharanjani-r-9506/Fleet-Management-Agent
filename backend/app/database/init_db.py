@@ -46,11 +46,54 @@ CREATE TABLE IF NOT EXISTS maintenance_schedule (
     status TEXT
 )
 """)
+    cursor.execute("""
+CREATE TABLE IF NOT EXISTS service_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_date TEXT,
+    service_time TEXT,
+    available INTEGER
+)
+""")
+
+# Bookings
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS service_bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id TEXT,
+            service_date TEXT,
+            service_time TEXT,
+            status TEXT
+        )
+        """)
+    cursor.execute("""
+CREATE TABLE IF NOT EXISTS delivery_schedule (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id TEXT,
+    delivery_date TEXT,
+    route TEXT,
+    status TEXT
+)
+""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS agent_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id TEXT,
+    risk_level TEXT,
+    decision TEXT,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    message TEXT,
+    status TEXT DEFAULT 'Unread',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""")
 
     conn.commit()
     conn.close()
 
-    print("Vehicles table created successfully!")
+    print("Tables created successfully!")
 
 if __name__ == "__main__":
     create_tables()

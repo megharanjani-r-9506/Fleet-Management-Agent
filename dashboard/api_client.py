@@ -33,3 +33,11 @@ def get_deliveries():
 def get_service_slots():
     res = requests.get(f"{BASE_URL}/service-slots")
     return pd.DataFrame(res.json())
+
+def get_decisions():
+    res = requests.get(f"{BASE_URL}/decisions")
+    return pd.DataFrame(res.json())
+
+def get_notifications():
+    res = requests.get(f"{BASE_URL}/notifications")
+    return pd.DataFrame(res.json())

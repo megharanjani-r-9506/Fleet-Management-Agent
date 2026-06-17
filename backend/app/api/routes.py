@@ -131,3 +131,63 @@ def get_service_slots():
     conn.close()
 
     return [dict(zip(columns, row)) for row in rows]
+
+@router.get("/decisions")
+def get_decisions():
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            vehicle_id,
+            risk_level,
+            decision,
+            reason,
+            created_at
+        FROM agent_decisions
+        ORDER BY id DESC
+        LIMIT 20
+    """)
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "vehicle_id": row[0],
+            "risk_level": row[1],
+            "decision": row[2],
+            "reason": row[3],
+            "created_at": row[4]
+        }
+        for row in rows
+    ]
+
+@router.get("/notifications")
+def get_notifications():
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, title, message, status, created_at
+        FROM notifications
+        ORDER BY id DESC
+        LIMIT 20
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "title": r[1],
+            "message": r[2],
+            "status": r[3],
+            "created_at": r[4]
+        }
+        for r in rows
+    ]
