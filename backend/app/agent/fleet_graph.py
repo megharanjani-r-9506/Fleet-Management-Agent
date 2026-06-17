@@ -16,6 +16,7 @@ from app.services.delivery_service import (
 )
 
 from app.services.conflict_engine import check_universal_conflict
+from app.services.notification_service import send_email
 
 
 # -----------------------------
@@ -76,7 +77,7 @@ def rank_vehicles(state):
 
 
 # -----------------------------
-# NODE 3: DECISION BRAIN (UNIFIED ENGINE)
+# NODE 3: DECISION BRAIN
 # -----------------------------
 def decision_brain(state):
 
@@ -86,15 +87,6 @@ def decision_brain(state):
 
     for maintenance_id, vehicle_id, risk_level in state["pending"]:
 
-        priority_map = {
-            "Critical": 1,
-            "Maintenance Required": 2,
-            "Monitor": 3,
-            "Healthy": 4
-        }
-
-        priority_score = priority_map.get(risk_level, 99)
-
         conflict = check_universal_conflict(vehicle_id, risk_level)
         delivery = has_upcoming_delivery(vehicle_id)
 
@@ -102,7 +94,7 @@ def decision_brain(state):
         reason = None
 
         # --------------------------------
-        # CRITICAL CASE WITH CONFLICT
+        # CRITICAL CASE
         # --------------------------------
         if risk_level == "Critical" and (conflict["has_conflict"] or delivery):
 
@@ -124,6 +116,13 @@ def decision_brain(state):
                         f"{vehicle_id} reassigned to {replacement}"
                     )
 
+                    # 📧 EMAIL TRIGGER (REASSIGNMENT)
+                    send_email(
+                        "🚚 Delivery Reassigned",
+                        f"Vehicle {vehicle_id} delivery moved to {replacement} "
+                        f"for route {route} on {delivery_date}"
+                    )
+
                 else:
 
                     decision = "Hold Delivery"
@@ -134,13 +133,20 @@ def decision_brain(state):
                         f"{vehicle_id} has no replacement available"
                     )
 
+                    # 📧 EMAIL TRIGGER (HOLD)
+                    send_email(
+                        "⛔ Delivery Held",
+                        f"Vehicle {vehicle_id} has no replacement available. "
+                        f"Delivery has been paused."
+                    )
+
             else:
 
                 decision = "Maintenance Delayed"
                 reason = "Conflict detected but no delivery impact"
 
         # --------------------------------
-        # MAINTENANCE REQUIRED CASE
+        # MAINTENANCE REQUIRED
         # --------------------------------
         elif risk_level == "Maintenance Required":
 
@@ -155,7 +161,7 @@ def decision_brain(state):
                 reason = "Safe to proceed"
 
         # --------------------------------
-        # DEFAULT CASE
+        # DEFAULT
         # --------------------------------
         else:
 
@@ -172,7 +178,6 @@ def decision_brain(state):
         decisions.append({
             "vehicle_id": vehicle_id,
             "risk_level": risk_level,
-            "priority_score": priority_score,
             "decision": decision,
             "reason": reason
         })
@@ -195,7 +200,6 @@ def allocate_slots(state):
         conflict = check_universal_conflict(vehicle_id, risk_level)
 
         if conflict["has_conflict"]:
-
             print(
                 f"[GRAPH] Conflict -> "
                 f"{vehicle_id} | {conflict['type']} | {conflict['details']}"
@@ -257,6 +261,13 @@ def process_vehicle(state):
             print(
                 f"[GRAPH] Booked {vehicle_id} -> "
                 f"{service_date} {service_time}"
+            )
+
+            # 📧 EMAIL TRIGGER (MAINTENANCE BOOKED)
+            send_email(
+                "🛠️ Maintenance Booked",
+                f"Vehicle {vehicle_id} scheduled for maintenance on "
+                f"{service_date} at {service_time}"
             )
 
     conn.close()

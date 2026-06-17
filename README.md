@@ -12,12 +12,16 @@ python -c "from app.database.db import get_connection; c=get_connection(); cur=c
 
  uvicorn app.main:app --reload --port 8000          
 
+ python -m app.simulator.generate_data                                                                          
+ python -m app.agent.fleet_graph
+
+
  Here’s your system explained in simple terms (no jargon):
 
-🚚 Your Fleet Management System — What it does
+Fleet Management System — What it does
 1. Vehicle health monitoring
 
-Your system continuously checks each vehicle and assigns a status like:
+System continuously checks each vehicle and assigns a status like:
 
 Healthy
 Monitor
@@ -38,7 +42,7 @@ Marks it as “Booked” in database
 
 3. Smart slot allocation (capacity-aware)
 
-Your system:
+System:
 
 Checks available workshop slots
 Avoids overbooking a day

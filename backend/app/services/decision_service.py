@@ -1,6 +1,5 @@
 from app.database.db import get_connection
 
-
 def log_decision(
     vehicle_id,
     risk_level,
