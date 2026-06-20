@@ -31,18 +31,17 @@ def predict_vehicle_health(
 
     health_score = 100 - failure_probability
 
-    if health_score > 40:
+    if health_score >= 55:
         risk_level = "Healthy"
 
-    elif health_score > 25:
+    elif health_score >= 35:
         risk_level = "Monitor"
 
-    elif health_score > 10:
+    elif health_score >= 20:
         risk_level = "Maintenance Required"
 
     else:
         risk_level = "Critical"
-
     return {
         "health_score": float(round(health_score, 2)),
         "failure_probability": float(round(failure_probability, 2)),
