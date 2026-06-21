@@ -2,6 +2,10 @@ from datetime import datetime, timedelta
 
 from app.database.db import get_connection
 
+from app.services.ai_replacement_agent import (
+    choose_replacement_vehicle
+)
+
 
 def find_replacement_vehicle(
     excluded_vehicle,
@@ -43,7 +47,7 @@ def find_replacement_vehicle(
 
     candidates = cursor.fetchall()
 
-    scored_candidates = []
+    candidate_vehicles = []
 
     for (vehicle_id,) in candidates:
 
@@ -79,6 +83,7 @@ def find_replacement_vehicle(
 
         maintenance_count = cursor.fetchone()[0]
 
+        # Reject maintenance-conflicted vehicles
         if maintenance_count > 0:
 
             print(
@@ -102,47 +107,34 @@ def find_replacement_vehicle(
 
         future_deliveries = cursor.fetchall()
 
-        # -----------------------------
-        # Scoring Logic
-        # -----------------------------
-        if not future_deliveries:
+        cursor.execute("""
+            SELECT risk_level
+            FROM predictions
+            WHERE vehicle_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+        """, (vehicle_id,))
 
-            score = 100
+        prediction = cursor.fetchone()
 
-        else:
+        risk_level = (
+            prediction[0]
+            if prediction
+            else "Unknown"
+        )
 
-            next_delivery = datetime.strptime(
-                future_deliveries[0][0],
-                "%Y-%m-%d"
-            )
-
-            days_gap = (
-                next_delivery - target_date
-            ).days
-
-            if days_gap >= 7:
-                score = 80
-
-            elif days_gap >= 3:
-                score = 50
-
-            elif days_gap >= 1:
-                score = 10
-
-            else:
-                score = 0
-
-        scored_candidates.append({
+        candidate_vehicles.append({
             "vehicle_id": vehicle_id,
-            "score": score
+            "future_deliveries": len(future_deliveries),
+            "maintenance_booked": False,
+            "risk_level": risk_level
         })
-
     conn.close()
 
-    # -----------------------------
-    # No replacement available
-    # -----------------------------
-    if not scored_candidates:
+    # --------------------------------
+    # No candidates available
+    # --------------------------------
+    if not candidate_vehicles:
 
         print(
             "[GRAPH] No suitable replacement found"
@@ -150,20 +142,26 @@ def find_replacement_vehicle(
 
         return None
 
-    # -----------------------------
-    # Highest score wins
-    # -----------------------------
-    scored_candidates.sort(
-        key=lambda x: x["score"],
-        reverse=True
+    # --------------------------------
+    # Gemini chooses best vehicle
+    # --------------------------------
+    result = choose_replacement_vehicle(
+        excluded_vehicle,
+        "Critical",
+        delivery_date,
+        candidate_vehicles
     )
 
-    best_vehicle = scored_candidates[0]
+    recommended_vehicle = result["vehicle_id"]
 
     print(
-        f"[GRAPH] Best Replacement -> "
-        f"{best_vehicle['vehicle_id']} "
-        f"(Score={best_vehicle['score']})"
+        f"[AI] Gemini Selected -> "
+        f"{recommended_vehicle}"
     )
 
-    return best_vehicle["vehicle_id"]
+    print(
+        f"[AI] Reason -> "
+        f"{result['reason']}"
+    )
+
+    return recommended_vehicle

@@ -7,16 +7,19 @@ python -c "from app.database.db import get_connection; c=get_connection(); cur=c
 // to view slots
  python -c "from app.database.db import get_connection; c=get_connection(); cur=c.cursor(); cur.execute('SELECT service_date, service_time, available FROM service_slots'); print(cur.fetchall()); c.close()"           
 
-
+// to run frontend
  streamlit run app.py  
 
+// to run backend
  uvicorn app.main:app --reload --port 8000          
 
+// to run simulator to generate-data
  python -m app.simulator.generate_data                                                                          
+ // to run the agent
  python -m app.agent.fleet_graph
 
 
- Here’s your system explained in simple terms (no jargon):
+System explained in simple terms (no jargon):
 
 Fleet Management System — What it does
 1. Vehicle health monitoring
@@ -134,3 +137,184 @@ AI decisions
 Slot utilization
 
 👉 Full system visibility in one place.
+
+
+----------------------------------
+Test cases
+---------------------------------
+
+1. Test Normal Maintenance Booking
+
+from app.database.db import get_connection
+
+conn = get_connection()
+cur = conn.cursor()
+
+cur.execute("DELETE FROM maintenance_schedule WHERE vehicle_id='TRK003'")
+
+cur.execute("""
+INSERT INTO maintenance_schedule
+(vehicle_id,risk_level,recommendation,priority,status)
+VALUES
+('TRK003','Maintenance Required',
+'Routine Maintenance','Medium','Pending')
+""")
+
+conn.commit()
+conn.close()
+
+print("TEST 1 CREATED")
+print("Expected:")
+print("- Slot allocated")
+print("- Booking created")
+print("- Status -> Booked")
+
+2. Test Critical Vehicle Reassignment
+
+from app.database.db import get_connection
+
+conn = get_connection()
+cur = conn.cursor()
+
+cur.execute("DELETE FROM maintenance_schedule")
+cur.execute("DELETE FROM delivery_schedule")
+
+cur.execute("""
+INSERT INTO delivery_schedule
+(vehicle_id,delivery_date,route,status)
+VALUES
+('CRIT003','2026-06-20','Mumbai Route','Scheduled')
+""")
+
+cur.execute("""
+INSERT INTO maintenance_schedule
+(vehicle_id,risk_level,recommendation,priority,status)
+VALUES
+('CRIT003','Critical',
+'Immediate Maintenance','High','Pending')
+""")
+
+conn.commit()
+conn.close()
+
+print("TEST 2 CREATED")
+print("Expected:")
+print("- Delivery conflict")
+print("- Replacement found")
+print("- Delivery reassigned")
+
+3. Test Hold Delivery
+
+from app.database.db import get_connection
+
+conn = get_connection()
+cur = conn.cursor()
+
+cur.execute("DELETE FROM maintenance_schedule")
+cur.execute("DELETE FROM delivery_schedule")
+
+delivery_date = "2026-06-20"
+
+vehicles = [
+    "CRIT003",
+    "TRK001",
+    "TRK002",
+    "TRK003",
+    "TRK004",
+    "TRK005"
+]
+
+for vehicle in vehicles:
+
+    cur.execute("""
+    INSERT INTO delivery_schedule
+    (vehicle_id,delivery_date,route,status)
+    VALUES (?,?,?,?)
+    """, (
+        vehicle,
+        delivery_date,
+        f"Route-{vehicle}",
+        "Scheduled"
+    ))
+
+cur.execute("""
+INSERT INTO maintenance_schedule
+(vehicle_id,risk_level,recommendation,priority,status)
+VALUES
+('CRIT003','Critical',
+'Immediate Maintenance','High','Pending')
+""")
+
+conn.commit()
+conn.close()
+
+print("TEST 3 CREATED")
+print("Expected:")
+print("- No replacement vehicle")
+print("- Hold Delivery decision")
+
+4. Test Maintenance Required With Delivery
+
+from app.database.db import get_connection
+
+conn = get_connection()
+cur = conn.cursor()
+
+cur.execute("DELETE FROM maintenance_schedule")
+
+cur.execute("""
+INSERT INTO delivery_schedule
+(vehicle_id,delivery_date,route,status)
+VALUES
+('TRK005','2026-06-20','Chennai Route','Scheduled')
+""")
+
+cur.execute("""
+INSERT INTO maintenance_schedule
+(vehicle_id,risk_level,recommendation,priority,status)
+VALUES
+('TRK005',
+'Maintenance Required',
+'Engine Service',
+'Medium',
+'Pending')
+""")
+
+conn.commit()
+conn.close()
+
+print("TEST 4 CREATED")
+print("Expected:")
+print("- Schedule After Delivery")
+print("- No immediate booking")
+
+// reset db
+from app.database.db import get_connection
+
+conn = get_connection()
+cur = conn.cursor()
+
+# Agent outputs
+cur.execute("DELETE FROM agent_decisions")
+cur.execute("DELETE FROM notifications")
+
+# Maintenance workflow
+cur.execute("DELETE FROM maintenance_schedule")
+cur.execute("DELETE FROM service_bookings")
+
+# Deliveries
+cur.execute("DELETE FROM delivery_schedule")
+
+# Predictions (optional)
+cur.execute("DELETE FROM predictions")
+
+# Make all service slots available again
+cur.execute("""
+UPDATE service_slots
+SET available = 1
+""")
+
+conn.commit()
+conn.close()
+
+print("TEST ENVIRONMENT RESET")

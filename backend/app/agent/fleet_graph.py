@@ -2,8 +2,11 @@ from langgraph.graph import StateGraph, END
 
 from app.database.db import get_connection
 from app.services.booking_service import create_booking
-from app.services.smart_scheduler import select_best_slot
+from app.services.smart_scheduler import get_available_slots
 
+from app.services.ai_scheduler_agent import (
+    choose_maintenance_slot
+)
 from app.services.decision_service import (
     log_decision,
     create_notification
@@ -18,7 +21,18 @@ from app.services.delivery_service import (
 from app.services.conflict_engine import check_universal_conflict
 from app.services.notification_service import send_email
 
+from app.services.ai_decision_agent import (
+    make_maintenance_decision
+)
 
+from app.services.notification_service import (
+    send_email,
+    build_delivery_reassigned_email,
+    build_maintenance_email,
+    build_delivery_hold_email,
+    build_maintenance_deferred_email,
+    build_maintenance_delayed_email
+)
 # -----------------------------
 # STATE STRUCTURE
 # -----------------------------
@@ -75,7 +89,48 @@ def rank_vehicles(state):
 
     return state
 
+def get_failure_probability(vehicle_id):
+    conn = get_connection()
+    cursor = conn.cursor()
 
+    cursor.execute(
+        """
+        SELECT failure_probability
+        FROM predictions
+        WHERE vehicle_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+    """,
+        (vehicle_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return row[0]
+
+    return 0
+
+
+def get_upcoming_delivery_count(vehicle_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM delivery_schedule
+        WHERE vehicle_id = ?
+        AND status = 'Scheduled'
+    """,
+        (vehicle_id,),
+    )
+
+    count = cursor.fetchone()[0]
+    conn.close()
+
+    return count
 # -----------------------------
 # NODE 3: DECISION BRAIN
 # -----------------------------
@@ -87,93 +142,146 @@ def decision_brain(state):
 
     for maintenance_id, vehicle_id, risk_level in state["pending"]:
 
-        conflict = check_universal_conflict(vehicle_id, risk_level)
         delivery = has_upcoming_delivery(vehicle_id)
 
-        decision = None
-        reason = None
+        replacement = None
+        replacement_available = False
+
+        if delivery:
+
+            delivery_id, delivery_date, route = delivery
+
+            replacement = find_replacement_vehicle(
+                vehicle_id,
+                delivery_date
+            )
+
+            replacement_available = (
+                replacement is not None
+            )
 
         # --------------------------------
-        # CRITICAL CASE
+        # AI Decision Agent
         # --------------------------------
-        if risk_level == "Critical" and (conflict["has_conflict"] or delivery):
+        failure_probability = get_failure_probability(
+            vehicle_id
+        )
 
-            if delivery:
+        upcoming_delivery_count = (
+            get_upcoming_delivery_count(
+                vehicle_id
+            )
+        )
 
-                delivery_id, delivery_date, route = delivery
+        replacement_vehicle_count = 1 if replacement_available else 0
+        
+        ai_result = make_maintenance_decision(
+            vehicle_id=vehicle_id,
+            risk_level=risk_level,
+            has_delivery=bool(delivery),
+            replacement_available=replacement_available,
+            failure_probability=failure_probability,
+            upcoming_delivery_count=upcoming_delivery_count,
+            replacement_vehicle_count=replacement_vehicle_count
+        )
 
-                replacement = find_replacement_vehicle(vehicle_id, delivery_date)
+        decision = ai_result["decision"]
+        reason = ai_result["reason"]
+        confidence = ai_result.get(
+            "confidence",
+            0
+        )
 
-                if replacement:
-
-                    reassign_delivery(vehicle_id, replacement)
-
-                    decision = "Delivery Reassigned"
-                    reason = f"Moved to {replacement} due to conflict"
-
-                    create_notification(
-                        "Delivery Reassigned",
-                        f"{vehicle_id} reassigned to {replacement}"
-                    )
-
-                    # 📧 EMAIL TRIGGER (REASSIGNMENT)
-                    send_email(
-                        "🚚 Delivery Reassigned",
-                        f"Vehicle {vehicle_id} delivery moved to {replacement} "
-                        f"for route {route} on {delivery_date}"
-                    )
-
-                else:
-
-                    decision = "Hold Delivery"
-                    reason = "No replacement vehicle available"
-
-                    create_notification(
-                        "Delivery Held",
-                        f"{vehicle_id} has no replacement available"
-                    )
-
-                    # 📧 EMAIL TRIGGER (HOLD)
-                    send_email(
-                        "⛔ Delivery Held",
-                        f"Vehicle {vehicle_id} has no replacement available. "
-                        f"Delivery has been paused."
-                    )
-
-            else:
-
-                decision = "Maintenance Delayed"
-                reason = "Conflict detected but no delivery impact"
+        print(
+            f"[AI] {vehicle_id} -> "
+            f"{decision} "
+            f"(Confidence={confidence}%)"
+        )
 
         # --------------------------------
-        # MAINTENANCE REQUIRED
+        # Execute Decision
         # --------------------------------
-        elif risk_level == "Maintenance Required":
 
-            if delivery:
+        if decision == "Delivery Reassigned":
 
-                decision = "Schedule After Delivery"
-                reason = "Maintenance deferred due to delivery"
+            delivery_id, delivery_date, route = delivery
 
-            else:
+            reassign_delivery(
+                vehicle_id,
+                replacement
+            )
 
-                decision = "Schedule Maintenance"
-                reason = "Safe to proceed"
+            create_notification(
+                "Delivery Reassigned",
+                f"{vehicle_id} reassigned to {replacement}"
+            )
 
-        # --------------------------------
-        # DEFAULT
-        # --------------------------------
-        else:
+            send_email(
+                "🚚 Delivery Reassigned",
+                build_delivery_reassigned_email(
+                    vehicle_id,
+                    replacement,
+                    route,
+                    delivery_date
+                )
+            )
 
-            decision = "No Action Required"
-            reason = "Vehicle is stable or low priority"
+        elif decision == "Hold Delivery":
+
+            create_notification(
+                "Delivery Held",
+                f"{vehicle_id} has no replacement available"
+            )
+
+            send_email(
+                "⛔ Delivery Held",
+                build_delivery_hold_email(
+                    vehicle_id
+                )
+            )
+
+        elif decision == "Schedule Maintenance":
+
+            send_email(
+                "🛠️ Maintenance Approved",
+                build_maintenance_email(
+                    vehicle_id
+                )
+            )
+
+        elif decision == "Schedule After Delivery":
+
+            send_email(
+                "📅 Maintenance Deferred",
+                build_maintenance_deferred_email(
+                    vehicle_id
+                )
+            )
+
+        elif decision == "Maintenance Delayed":
+
+            send_email(
+                "⚠️ Maintenance Delayed",
+                build_maintenance_delayed_email(
+                    vehicle_id
+                )
+            )
 
         # --------------------------------
         # LOG DECISION
         # --------------------------------
-        log_decision(vehicle_id, risk_level, decision, reason)
 
-        print(f"[GRAPH] Decision -> {vehicle_id} | {decision}")
+        log_decision(
+            vehicle_id,
+            risk_level,
+            decision,
+            reason
+        )
+
+        print(
+            f"[GRAPH] Decision -> "
+            f"{vehicle_id} | {decision}"
+        )
 
         decisions.append({
             "vehicle_id": vehicle_id,
@@ -183,8 +291,8 @@ def decision_brain(state):
         })
 
     state["decisions"] = decisions
-    return state
 
+    return state
 
 # -----------------------------
 # NODE 4: SLOT ALLOCATION
@@ -202,33 +310,70 @@ def allocate_slots(state):
         if conflict["has_conflict"]:
             print(
                 f"[GRAPH] Conflict -> "
-                f"{vehicle_id} | {conflict['type']} | {conflict['details']}"
+                f"{vehicle_id} | "
+                f"{conflict['type']} | "
+                f"{conflict['details']}"
             )
             continue
 
-        slot = select_best_slot(vehicle_id)
+        # --------------------------------
+        # Get ALL available slots
+        # --------------------------------
+        available_slots = get_available_slots(vehicle_id)
 
-        if not slot:
+        if not available_slots:
             print(f"[GRAPH] No slot available for {vehicle_id}")
             continue
 
-        slot_id, service_date, service_time = slot
+        # --------------------------------
+        # AI Scheduler Agent
+        # --------------------------------
+        ai_choice = choose_maintenance_slot(
+            vehicle_id, risk_level, available_slots
+        )
 
-        allocations.append({
-            "maintenance_id": maintenance_id,
-            "vehicle_id": vehicle_id,
-            "risk_level": risk_level,
-            "slot": slot
-        })
+        chosen_slot_id = ai_choice["slot_id"]
+
+        print(f"[AI Scheduler] {vehicle_id} -> Slot {chosen_slot_id}")
+
+        # --------------------------------
+        # Find chosen slot
+        # --------------------------------
+        selected_slot = None
+
+        for slot in available_slots:
+            if slot["slot_id"] == chosen_slot_id:
+                selected_slot = slot
+                break
+
+        # Fallback
+        if not selected_slot:
+            selected_slot = available_slots[0]
+            print("[GRAPH] AI selected invalid slot. Using fallback.")
+
+        slot_id = selected_slot["slot_id"]
+        service_date = selected_slot["date"]
+        service_time = selected_slot["time"]
+
+        allocations.append(
+            {
+                "maintenance_id": maintenance_id,
+                "vehicle_id": vehicle_id,
+                "risk_level": risk_level,
+                "slot": (slot_id, service_date, service_time),
+            }
+        )
 
         print(
             f"[GRAPH] Slot Selected -> "
-            f"{vehicle_id}: {service_date} {service_time}"
+            f"{vehicle_id}: "
+            f"{service_date} "
+            f"{service_time}"
         )
 
     state["allocations"] = allocations
-    return state
 
+    return state
 
 # -----------------------------
 # NODE 5: PROCESS BOOKINGS
