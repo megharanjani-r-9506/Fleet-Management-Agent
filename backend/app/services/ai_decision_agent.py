@@ -3,7 +3,7 @@ import json
 
 from dotenv import load_dotenv
 import google.generativeai as genai
-
+import time
 load_dotenv()
 
 genai.configure(
@@ -109,7 +109,6 @@ Return ONLY valid JSON:
 """
 
     response = model.generate_content(prompt)
-
     result = response.text.strip()
 
     result = result.replace("```json", "")

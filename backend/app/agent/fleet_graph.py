@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END
-
+import time
 from app.database.db import get_connection
 from app.services.booking_service import create_booking
 from app.services.smart_scheduler import get_available_slots
@@ -33,6 +33,7 @@ from app.services.notification_service import (
     build_maintenance_deferred_email,
     build_maintenance_delayed_email
 )
+
 # -----------------------------
 # STATE STRUCTURE
 # -----------------------------
@@ -184,7 +185,7 @@ def decision_brain(state):
             upcoming_delivery_count=upcoming_delivery_count,
             replacement_vehicle_count=replacement_vehicle_count
         )
-
+        time.sleep(30)
         decision = ai_result["decision"]
         reason = ai_result["reason"]
         confidence = ai_result.get(
@@ -291,7 +292,7 @@ def decision_brain(state):
         })
 
     state["decisions"] = decisions
-
+    
     return state
 
 # -----------------------------
@@ -331,6 +332,7 @@ def allocate_slots(state):
         ai_choice = choose_maintenance_slot(
             vehicle_id, risk_level, available_slots
         )
+        time.sleep(30)
 
         chosen_slot_id = ai_choice["slot_id"]
 

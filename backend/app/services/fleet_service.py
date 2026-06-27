@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-
+import time
 from app.database.db import get_connection
 
 from app.services.ai_replacement_agent import (
@@ -151,7 +151,7 @@ def find_replacement_vehicle(
         delivery_date,
         candidate_vehicles
     )
-
+    time.sleep(30)
     recommended_vehicle = result["vehicle_id"]
 
     print(
