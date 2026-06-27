@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 
-BASE_URL =  "https://fleet-management-agent-production.up.railway.app"
+BASE_URL = "https://fleet-management-agent-production.up.railway.app" 
 
 
 def get_vehicles():
@@ -41,3 +41,12 @@ def get_decisions():
 def get_notifications():
     res = requests.get(f"{BASE_URL}/notifications")
     return pd.DataFrame(res.json())
+
+def reset_demo():
+    return requests.post(f"{BASE_URL}/reset-demo")
+
+def generate_telemetry():
+    return requests.post(f"{BASE_URL}/generate-telemetry")
+
+def run_ai_agents():
+    return requests.post(f"{BASE_URL}/run-ai-agents")

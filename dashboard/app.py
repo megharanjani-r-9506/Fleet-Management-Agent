@@ -9,7 +9,10 @@ from api_client import (
     get_service_slots,
     get_vehicles,
     get_decisions,
-    get_notifications   # ✅ IMPORTANT
+    get_notifications , 
+    generate_telemetry,  
+    reset_demo,
+    run_ai_agents
 )
 
 # -----------------------------
@@ -22,7 +25,55 @@ st.set_page_config(
 
 st.title("🚚 AI Fleet Maintenance Management System")
 
+button1, button2, button3 = st.columns(3)
+
 # -----------------------------
+# RESET DEMO
+# -----------------------------
+with button1:
+
+    if st.button("🔄 Reset Demo", use_container_width=True):
+
+        response = reset_demo()
+
+        if response.status_code == 200:
+            st.success("Demo reset successfully!")
+            st.rerun()
+        else:
+            st.error("Reset failed.")
+
+# -----------------------------
+# GENERATE TELEMETRY
+# -----------------------------
+with button2:
+
+    if st.button("🚚 Generate Telemetry", use_container_width=True):
+
+        response = generate_telemetry()
+
+        if response.status_code == 200:
+            st.success("Telemetry generated successfully!")
+            st.rerun()
+        else:
+            st.error("Telemetry generation failed.")
+
+# -----------------------------
+# RUN AI AGENTS
+# -----------------------------
+with button3:
+
+    if st.button("🧠 Run AI Agents", use_container_width=True):
+
+        response = run_ai_agents()
+
+        if response.status_code == 200:
+            st.success("AI Agents executed successfully!")
+            st.rerun()
+        else:
+            st.error("Failed to execute AI Agents.")
+
+
+#-----------------------------
 # LOAD DATA
 # -----------------------------
 vehicles_df = get_vehicles()

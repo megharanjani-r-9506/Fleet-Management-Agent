@@ -1,5 +1,13 @@
 from fastapi import APIRouter
 from app.database.db import get_connection
+from app.simulator.generate_data import (
+    vehicles,
+    generate_telemetry
+)
+from app.reset import reset_demo
+from app.agent.fleet_graph import run_fleet_graph
+from app.simulator.save_telemetry import save_telemetry
+from app.core.vehicle_processor import process_vehicle_event
 
 router = APIRouter()
 
@@ -191,3 +199,48 @@ def get_notifications():
         }
         for r in rows
     ]
+
+@router.post("/generate-telemetry")
+def generate_telemetry_now():
+
+    results = []
+
+    for vehicle in vehicles:
+
+        data = generate_telemetry(
+            vehicle["vehicle_id"]
+        )
+
+        save_telemetry(data)
+
+        prediction = process_vehicle_event(data)
+
+        results.append({
+            "vehicle_id": data["vehicle_id"],
+            "prediction": prediction["prediction"]
+        })
+        # Run the complete AI workflow
+
+    return {
+        "message": "Telemetry generated successfully",
+        "vehicles_processed": len(results),
+        "results": results
+    }
+
+@router.post("/reset-demo")
+def reset_demo_endpoint():
+
+    reset_demo()
+
+    return {
+        "message": "Demo environment reset successfully."
+    }
+
+@router.post("/run-ai-agents")
+def run_ai_agents():
+
+    run_fleet_graph()
+
+    return {
+        "message": "AI agents executed successfully."
+    }
