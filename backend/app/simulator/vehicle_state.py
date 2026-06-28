@@ -43,10 +43,10 @@ vehicle_state = {
 
     # CRITICAL
     "TRK005": {
-        "engine_temp": 120,
-        "engine_rpm": 2500,
-        "engine_load": 100,
-        "operating_hours": 10000,
-        "mileage": 200000,
+        "engine_temp": 65,
+        "engine_rpm": 1000,
+        "engine_load": 15,
+        "operating_hours": 200,
+        "mileage": 5000,
     },
 }

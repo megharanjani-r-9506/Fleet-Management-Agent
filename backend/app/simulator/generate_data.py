@@ -54,12 +54,12 @@ vehicles = [
     # VERY CRITICAL
     {
         "vehicle_id": "TRK005",
-        "ambient_temp": 38,
-        "engine_temp": 120,
-        "engine_rpm": 2500,
-        "engine_load": 100,
-        "operating_hours": 10000,
-        "mileage": 220000
+        "ambient_temp": 25,
+        "engine_temp": 75,
+        "engine_rpm": 1500,
+        "engine_load": 30,
+        "operating_hours": 500,
+        "mileage": 10000
     }
 ]
 
