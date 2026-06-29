@@ -1,8 +1,6 @@
-from app.services.reassignment_service import reassign_delivery
+from app.services.notification_service import send_email
 
-rows = reassign_delivery(
-    "TRK001",
-    "TRK002"
+send_email(
+    "Test Email",
+    "Hello from Fleet AI"
 )
-
-print(rows)

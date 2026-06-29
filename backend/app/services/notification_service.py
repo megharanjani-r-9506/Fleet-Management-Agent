@@ -1,24 +1,23 @@
-import smtplib
-from email.mime.text import MIMEText
+import os
+import resend
+from dotenv import load_dotenv
 
-SENDER_EMAIL = "megharanjanir@gmail.com"
-SENDER_PASSWORD = "wgoe vxpo pbbl ravh"
-RECEIVER_EMAIL = "rudhramegha9506@gmail.com"
+load_dotenv()
+resend.api_key = os.getenv("RESEND_API_KEY")
+
+RECEIVER_EMAIL = os.getenv("EMAIL_RECEIVER")
+
 
 
 def send_email(subject, message):
 
-    msg = MIMEText(message)
-    msg["Subject"] = subject
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
-
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        server.quit()
+        resend.Emails.send({
+            "from": "Fleet AI <onboarding@resend.dev>",
+            "to": RECEIVER_EMAIL,
+            "subject": subject,
+            "text": message
+        })
 
         print("[EMAIL] Sent successfully")
 
@@ -142,3 +141,9 @@ System Status:
 ✓ Vehicle flagged for attention
 ✓ Maintenance not yet scheduled
 """
+
+if __name__ == "__main__":
+    send_email(
+        "Fleet AI Test",
+        "Hello! This is a test email from Fleet AI."
+    )
